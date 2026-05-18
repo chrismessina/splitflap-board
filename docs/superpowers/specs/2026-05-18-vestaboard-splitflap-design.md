@@ -130,8 +130,9 @@ staggered timing sells the effect more than per-flap 3D accuracy.
 - Auto-loop toggle switch.
 - Background color picker — default near-black `#0a0a0a`.
 - Typeface dropdown — curated set of ~4–5:
-  - Helvetica / Inter (default)
-  - a monospace (e.g. DM Mono)
+  - **Geist Mono Light (default)** — loaded via Google Fonts, weight 300
+  - Helvetica / Inter
+  - DM Mono
   - a condensed sans
   - a humanist sans
   - loaded via Google Fonts where not web-safe.
@@ -177,7 +178,7 @@ regardless of the auto-loop toggle.
 | Setting     | Default                          |
 |-------------|----------------------------------|
 | Background  | `#0a0a0a` (near-black)           |
-| Typeface    | Helvetica / Inter                |
+| Typeface    | Geist Mono Light (weight 300)    |
 | Grid        | 1 × message-length               |
 | Speed       | "snappy" per-flip duration       |
 | Flip count  | a sensible mid value (e.g. 12)   |

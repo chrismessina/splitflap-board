@@ -1,0 +1,132 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: #141414;
+  color: #e8e8e8;
+  font: 14px/1.4 "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  display: flex;
+  overflow: hidden;
+}
+
+#stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 32px;
+}
+
+#board {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+}
+
+#panel {
+  width: 320px;
+  flex-shrink: 0;
+  background: #1c1c1c;
+  border-left: 1px solid #2c2c2c;
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+#panel h1 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > span { font-size: 12px; color: #9a9a9a; text-transform: uppercase; letter-spacing: .05em; }
+.field > span small { text-transform: none; letter-spacing: 0; color: #6f6f6f; }
+
+.row { display: flex; gap: 12px; }
+.row .field { flex: 1; }
+
+input[type="text"],
+input[type="number"],
+select {
+  background: #111;
+  border: 1px solid #383838;
+  color: #e8e8e8;
+  border-radius: 6px;
+  padding: 9px 10px;
+  font: inherit;
+  width: 100%;
+}
+
+input[type="color"] {
+  background: #111;
+  border: 1px solid #383838;
+  border-radius: 6px;
+  height: 38px;
+  width: 100%;
+  cursor: pointer;
+}
+
+input[type="range"] { width: 100%; accent-color: #f4f4f4; }
+
+input:focus, select:focus { outline: none; border-color: #6a6a6a; }
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.toggle input { accent-color: #f4f4f4; width: 16px; height: 16px; }
+
+.actions { display: flex; gap: 10px; margin-top: 4px; }
+
+button {
+  font: inherit;
+  border-radius: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+button.primary {
+  flex: 1;
+  background: #f4f4f4;
+  color: #111;
+  font-weight: 600;
+}
+button.primary:hover { background: #fff; }
+button.primary:disabled { background: #3a3a3a; color: #777; cursor: not-allowed; }
+
+button.ghost {
+  background: transparent;
+  border: 1px solid #383838;
+  color: #9a9a9a;
+  font-size: 12px;
+  padding: 7px 10px;
+}
+button.ghost:hover { border-color: #5a5a5a; color: #ccc; }
+
+.field.disabled { opacity: .4; pointer-events: none; }
+
+.hint { font-size: 11px; color: #6f6f6f; line-height: 1.5; }
+.hint code {
+  display: block;
+  margin-top: 4px;
+  background: #111;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: #9ad;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+}
+
+.status { font-size: 12px; color: #d0a; min-height: 16px; }
+.status.ok { color: #6c9; }

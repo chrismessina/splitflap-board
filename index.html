@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Split-Flap Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400&family=Inter:wght@400;500&family=DM+Mono:wght@300;400&family=Oswald:wght@300;400&family=Source+Sans+3:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage">
+  <canvas id="board"></canvas>
+</div>
+
+<aside id="panel">
+  <h1>Split-Flap Board</h1>
+
+  <label class="field">
+    <span>Message</span>
+    <input id="message" type="text" value="HELLO" autocomplete="off">
+  </label>
+
+  <div class="row">
+    <label class="field">
+      <span>Rows</span>
+      <input id="rows" type="number" min="1" max="12" value="1">
+    </label>
+    <label class="field">
+      <span>Columns</span>
+      <input id="cols" type="number" min="1" max="44" value="5">
+    </label>
+  </div>
+  <button id="resetGrid" class="ghost">Reset grid to message length</button>
+
+  <label class="field">
+    <span>Flips per cell <small>(base; jittered per cell)</small></span>
+    <input id="flips" type="number" min="1" max="60" value="12">
+  </label>
+
+  <label class="field">
+    <span>Speed <small>(<output id="speedOut">70</output> ms / flip)</small></span>
+    <input id="speed" type="range" min="20" max="180" value="70">
+  </label>
+
+  <label class="toggle">
+    <input id="loop" type="checkbox">
+    <span>Auto-loop</span>
+  </label>
+
+  <div class="row">
+    <label class="field">
+      <span>Background</span>
+      <input id="bg" type="color" value="#0a0a0a">
+    </label>
+    <label class="field">
+      <span>Typeface</span>
+      <select id="font">
+        <option value='300 1em "Geist Mono", "Helvetica Neue", monospace' selected>Geist Mono Light</option>
+        <option value='500 1em "Inter", "Helvetica Neue", sans-serif'>Inter</option>
+        <option value='400 1em "DM Mono", monospace'>DM Mono</option>
+        <option value='400 1em "Oswald", sans-serif'>Oswald (condensed)</option>
+        <option value='400 1em "Source Sans 3", sans-serif'>Source Sans (humanist)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="actions">
+    <button id="flip" class="primary">Flip</button>
+    <button id="record" class="primary" disabled>Record &amp; Download</button>
+  </div>
+
+  <p class="hint">Recording exports a 1920×1080 .webm. For MP4:
+    <code>ffmpeg -i vestaboard.webm vestaboard.mp4</code></p>
+  <p id="status" class="status"></p>
+</aside>
+
+<script src="app.js"></script>
+</body>
+</html>
