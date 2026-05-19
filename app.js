@@ -75,6 +75,38 @@ const els = {
 };
 const ctx = els.canvas.getContext('2d');
 
+/* ------------------------------------------------------------------ *
+ * Persistence — settings round-trip through localStorage.
+ * Saved on every relevant change; restored at boot.
+ * ------------------------------------------------------------------ */
+const STORAGE_KEY = 'vestaboard-splitflap.v1';
+
+function saveSettings() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      text: els.message.value,
+      rows: state.rows,
+      cols: state.cols,
+      gridManual: state.gridManual,
+      flipBase: state.flipBase,
+      speed: state.speed,
+      looping: els.loop.checked,
+      sound: els.sound.checked,
+      soundStyle: state.soundStyle,
+      bg: state.bg,
+      font: els.font.value,
+      format: els.format.value,
+    }));
+  } catch (_) { /* private mode / quota — silently ignore */ }
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+
 const state = {
   rows: 1,
   cols: 5,
@@ -493,9 +525,19 @@ function applyLoopUI() {
 }
 
 let textDebounce = null;
+let justPasted = false;
+els.message.addEventListener('paste', () => {
+  // Pasting overrides any manual grid sizing — fit to the new text.
+  state.gridManual = false;
+  justPasted = true;
+});
 els.message.addEventListener('input', () => {
+  if (justPasted) {                  // paste already cleared gridManual
+    justPasted = false;
+  }
   syncDefaultGrid();
   fitCanvas();                       // immediate: grid resizes as you type
+  saveSettings();
   clearTimeout(textDebounce);
   textDebounce = setTimeout(() => {  // settle, then flip to the new text
     if (state.looping) return;       // loop already cycles continuously
@@ -507,12 +549,14 @@ els.rows.addEventListener('input', () => {
   state.rows = Math.max(1, +els.rows.value || 1);
   rebuildCells();
   fitCanvas();
+  saveSettings();
 });
 els.cols.addEventListener('input', () => {
   state.gridManual = true;
   state.cols = Math.max(1, +els.cols.value || 1);
   rebuildCells();
   fitCanvas();
+  saveSettings();
 });
 els.resetGrid.addEventListener('click', () => {
   state.gridManual = false;
@@ -521,15 +565,18 @@ els.resetGrid.addEventListener('click', () => {
   state.cols = +els.cols.value;
   rebuildCells();
   fitCanvas();
+  saveSettings();
 });
 els.flips.addEventListener('input', () => {
   state.flipBase = Math.max(1, +els.flips.value || 1);
+  saveSettings();
 });
 els.speed.addEventListener('input', () => {
   state.speed = +els.speed.value;
   els.speedOut.textContent = els.speed.value;
+  saveSettings();
 });
-els.loop.addEventListener('change', applyLoopUI);
+els.loop.addEventListener('change', () => { applyLoopUI(); saveSettings(); });
 function applySoundUI() {
   els.soundStyle.parentElement.style.display = state.sound ? '' : 'none';
 }
@@ -537,16 +584,20 @@ els.sound.addEventListener('change', () => {
   state.sound = els.sound.checked;
   if (state.sound) ensureAudio();   // unlock AudioContext on user gesture
   applySoundUI();
+  saveSettings();
 });
 els.soundStyle.addEventListener('change', () => {
   state.soundStyle = els.soundStyle.value;
+  saveSettings();
 });
-els.bg.addEventListener('input', () => { state.bg = els.bg.value; render(); });
+els.bg.addEventListener('input', () => { state.bg = els.bg.value; render(); saveSettings(); });
 els.font.addEventListener('change', async () => {
   state.font = els.font.value;
   await document.fonts.ready;
   render();
+  saveSettings();
 });
+els.format.addEventListener('change', saveSettings);
 els.flip.addEventListener('click', () => { if (!state.looping) startFlip(); });
 els.record.addEventListener('click', exportVideo);
 window.addEventListener('resize', fitCanvas);
@@ -555,18 +606,52 @@ window.addEventListener('resize', fitCanvas);
  * Boot
  * ------------------------------------------------------------------ */
 (async function init() {
+  // 1. Restore saved settings into the DOM controls before reading them.
+  const saved = loadSettings();
+  if (saved) {
+    if (typeof saved.text === 'string')  els.message.value = saved.text;
+    if (saved.rows)                       els.rows.value    = saved.rows;
+    if (saved.cols)                       els.cols.value    = saved.cols;
+    if (saved.flipBase)                   els.flips.value   = saved.flipBase;
+    if (saved.speed)                      els.speed.value   = saved.speed;
+    if (typeof saved.looping === 'boolean') els.loop.checked = saved.looping;
+    if (typeof saved.sound   === 'boolean') els.sound.checked = saved.sound;
+    if (saved.soundStyle)                 els.soundStyle.value = saved.soundStyle;
+    if (saved.bg)                         els.bg.value      = saved.bg;
+    if (saved.font) {
+      const opt = [...els.font.options].find(o => o.value === saved.font);
+      if (opt) els.font.value = saved.font;
+    }
+    els.speedOut.textContent = els.speed.value;
+    state.gridManual = !!saved.gridManual;
+  }
+
+  // 2. Mirror DOM values into state.
   state.rows = +els.rows.value;
   state.cols = +els.cols.value;
   state.bg = els.bg.value;
+  state.font = els.font.value;
   state.flipBase = +els.flips.value;
   state.speed = +els.speed.value;
   state.sound = els.sound.checked;
   state.soundStyle = els.soundStyle.value;
+  state.looping = els.loop.checked;
   applySoundUI();
+
+  // 3. Populate the format dropdown (browser-dependent), then restore the
+  // saved selection if it is still available.
   populateFormats();
-  syncDefaultGrid();
-  state.rows = +els.rows.value;
-  state.cols = +els.cols.value;
+  if (saved && saved.format) {
+    const opt = [...els.format.options].find(o => o.value === saved.format);
+    if (opt) els.format.value = saved.format;
+  }
+
+  // 4. Grid sizing: respect manual override; otherwise derive from text.
+  if (!state.gridManual) {
+    syncDefaultGrid();
+    state.rows = +els.rows.value;
+    state.cols = +els.cols.value;
+  }
   rebuildCells();
   fitCanvas();
 
@@ -576,4 +661,12 @@ window.addEventListener('resize', fitCanvas);
   els.record.disabled = false;
   setStatus('');
   render();
+
+  // If auto-loop was on when we last saved, resume it.
+  if (state.looping) {
+    els.flips.parentElement.classList.add('disabled');
+    els.flips.disabled = true;
+    els.flip.disabled = true;
+    startFlip();
+  }
 })();
