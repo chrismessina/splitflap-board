@@ -23,6 +23,35 @@ const REEL_INDEX = (() => {
 const posOf = ch => REEL_INDEX.has(ch) ? REEL_INDEX.get(ch) : 0;
 
 /* ------------------------------------------------------------------ *
+ * Video formats. MediaRecorder can only encode what the browser ships.
+ * WebM is universally available. MP4/H.264 exists in some builds.
+ * H.265/HEVC is essentially never available client-side and is omitted.
+ * ------------------------------------------------------------------ */
+const FORMATS = {
+  webm:    { label: 'WebM (VP9)',      mime: 'video/webm;codecs=vp9', ext: 'webm' },
+  webm8:   { label: 'WebM (VP8)',      mime: 'video/webm;codecs=vp8', ext: 'webm' },
+  mp4h264: { label: 'MP4 (H.264)',     mime: 'video/mp4;codecs=avc1', ext: 'mp4'  },
+};
+function populateFormats() {
+  els.format.innerHTML = '';
+  let first = null;
+  for (const [key, f] of Object.entries(FORMATS)) {
+    if (!MediaRecorder.isTypeSupported(f.mime)) continue;
+    const o = document.createElement('option');
+    o.value = key; o.textContent = f.label;
+    els.format.appendChild(o);
+    if (!first) first = key;
+  }
+  if (!first) {                                  // last-ditch fallback
+    const o = document.createElement('option');
+    o.value = 'webm'; o.textContent = 'WebM';
+    els.format.appendChild(o);
+  } else {
+    els.format.value = first;
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * State
  * ------------------------------------------------------------------ */
 const els = {
@@ -35,8 +64,10 @@ const els = {
   speed:    document.getElementById('speed'),
   speedOut: document.getElementById('speedOut'),
   loop:     document.getElementById('loop'),
+  sound:    document.getElementById('sound'),
   bg:       document.getElementById('bg'),
   font:     document.getElementById('font'),
+  format:   document.getElementById('format'),
   flip:     document.getElementById('flip'),
   record:   document.getElementById('record'),
   status:   document.getElementById('status'),
@@ -56,7 +87,52 @@ const state = {
   looping: false,
   exporting: false,
   fontsReady: false,
+  sound: false,
 };
+
+/* ------------------------------------------------------------------ *
+ * Audio — synthesized "clack" per flip.
+ * A shared AudioContext; during export its output is also routed into a
+ * MediaStreamAudioDestinationNode so the recorded video carries sound.
+ * ------------------------------------------------------------------ */
+let audioCtx = null;
+let recDest = null;            // set only while exporting
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function clack() {
+  if (!state.sound) return;
+  const ac = ensureAudio();
+  const t = ac.currentTime;
+
+  // short noise burst -> bandpass = a dry mechanical tick
+  const len = Math.floor(ac.sampleRate * 0.03);
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1500 + Math.random() * 400;
+  bp.Q.value = 1.2;
+
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.45, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+
+  src.connect(bp).connect(g);
+  g.connect(ac.destination);
+  if (recDest) g.connect(recDest);   // also feed the recording mix
+  src.start(t);
+  src.stop(t + 0.05);
+}
 
 /* ------------------------------------------------------------------ *
  * Grid / message
@@ -246,6 +322,7 @@ let loopRunning = false;
 function step(dt) {
   const perFlip = state.speed;
   let anyActive = false;
+  let advancedThisFrame = 0;       // cap clacks/frame so it clatters, not mush
   for (const cell of state.cells) {
     if (cell.delay > 0) { cell.delay -= dt / perFlip; anyActive = true; continue; }
     if (cell.remaining <= 0 && cell.flipT >= 1) continue;
@@ -258,6 +335,7 @@ function step(dt) {
         cell.remaining--;
         cell.flipT = cell.remaining > 0 ? 0 : 1;
         if (cell.remaining === 0) cell.flipT = 1;
+        if (advancedThisFrame < 4) { clack(); advancedThisFrame++; }
       } else {
         cell.flipT = 1;
       }
@@ -311,10 +389,22 @@ async function exportVideo() {
   }
   render();
 
+  const fmt = FORMATS[els.format.value] || FORMATS.webm;
   const stream = els.canvas.captureStream(30);
-  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-    ? 'video/webm;codecs=vp9' : 'video/webm';
-  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8_000_000 });
+
+  // mix synthesized clacks into an audio track so the file carries sound
+  let recDestNode = null;
+  if (state.sound) {
+    const ac = ensureAudio();
+    recDestNode = ac.createMediaStreamDestination();
+    recDest = recDestNode;                       // clack() also feeds this
+    recDestNode.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
+  }
+
+  const rec = new MediaRecorder(stream, {
+    mimeType: fmt.mime,
+    videoBitsPerSecond: 8_000_000,
+  });
   const chunks = [];
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
 
@@ -346,12 +436,14 @@ async function exportVideo() {
 
   rec.stop();
   await done;
+  recDest = null;
 
-  const blob = new Blob(chunks, { type: 'video/webm' });
+  const blob = new Blob(chunks, { type: fmt.mime.split(';')[0] });
+  const fname = 'vestaboard.' + fmt.ext;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'vestaboard.webm';
+  a.download = fname;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 
@@ -361,7 +453,7 @@ async function exportVideo() {
   state.looping = wasLooping;
   els.record.disabled = false;
   els.flip.disabled = false;
-  setStatus('Saved vestaboard.webm', true);
+  setStatus('Saved ' + fname, true);
   fitCanvas();
   if (state.looping) startFlip();
 }
@@ -385,9 +477,15 @@ function applyLoopUI() {
   else { setStatus(''); }
 }
 
+let textDebounce = null;
 els.message.addEventListener('input', () => {
   syncDefaultGrid();
-  fitCanvas();
+  fitCanvas();                       // immediate: grid resizes as you type
+  clearTimeout(textDebounce);
+  textDebounce = setTimeout(() => {  // settle, then flip to the new text
+    if (state.looping) return;       // loop already cycles continuously
+    startFlip();
+  }, 400);
 });
 els.rows.addEventListener('input', () => {
   state.gridManual = true;
@@ -417,6 +515,10 @@ els.speed.addEventListener('input', () => {
   els.speedOut.textContent = els.speed.value;
 });
 els.loop.addEventListener('change', applyLoopUI);
+els.sound.addEventListener('change', () => {
+  state.sound = els.sound.checked;
+  if (state.sound) ensureAudio();   // unlock AudioContext on user gesture
+});
 els.bg.addEventListener('input', () => { state.bg = els.bg.value; render(); });
 els.font.addEventListener('change', async () => {
   state.font = els.font.value;
@@ -436,6 +538,8 @@ window.addEventListener('resize', fitCanvas);
   state.bg = els.bg.value;
   state.flipBase = +els.flips.value;
   state.speed = +els.speed.value;
+  state.sound = els.sound.checked;
+  populateFormats();
   syncDefaultGrid();
   state.rows = +els.rows.value;
   state.cols = +els.cols.value;

@@ -18,7 +18,7 @@
   <h1>Split-Flap Board</h1>
 
   <label class="field">
-    <span>Message</span>
+    <span>Text</span>
     <input id="message" type="text" value="HELLO" autocomplete="off">
   </label>
 
@@ -32,7 +32,7 @@
       <input id="cols" type="number" min="1" max="44" value="5">
     </label>
   </div>
-  <button id="resetGrid" class="ghost">Reset grid to message length</button>
+  <button id="resetGrid" class="ghost">Reset grid to text length</button>
 
   <label class="field">
     <span>Flips per cell <small>(base; jittered per cell)</small></span>
@@ -47,6 +47,11 @@
   <label class="toggle">
     <input id="loop" type="checkbox">
     <span>Auto-loop</span>
+  </label>
+
+  <label class="toggle">
+    <input id="sound" type="checkbox">
+    <span>Clacky sound</span>
   </label>
 
   <div class="row">
@@ -66,13 +71,18 @@
     </label>
   </div>
 
+  <label class="field">
+    <span>Video format</span>
+    <select id="format"></select>
+  </label>
+
   <div class="actions">
     <button id="flip" class="primary">Flip</button>
     <button id="record" class="primary" disabled>Record &amp; Download</button>
   </div>
 
-  <p class="hint">Recording exports a 1920×1080 .webm. For MP4:
-    <code>ffmpeg -i vestaboard.webm vestaboard.mp4</code></p>
+  <p class="hint">Recording exports 1920×1080. Only formats your browser can
+    encode are listed (H.265 can't be produced in-browser).</p>
   <p id="status" class="status"></p>
 </aside>
 
