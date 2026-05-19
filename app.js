@@ -530,9 +530,13 @@ els.speed.addEventListener('input', () => {
   els.speedOut.textContent = els.speed.value;
 });
 els.loop.addEventListener('change', applyLoopUI);
+function applySoundUI() {
+  els.soundStyle.parentElement.style.display = state.sound ? '' : 'none';
+}
 els.sound.addEventListener('change', () => {
   state.sound = els.sound.checked;
   if (state.sound) ensureAudio();   // unlock AudioContext on user gesture
+  applySoundUI();
 });
 els.soundStyle.addEventListener('change', () => {
   state.soundStyle = els.soundStyle.value;
@@ -558,6 +562,7 @@ window.addEventListener('resize', fitCanvas);
   state.speed = +els.speed.value;
   state.sound = els.sound.checked;
   state.soundStyle = els.soundStyle.value;
+  applySoundUI();
   populateFormats();
   syncDefaultGrid();
   state.rows = +els.rows.value;
