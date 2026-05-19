@@ -65,6 +65,7 @@ const els = {
   speedOut: document.getElementById('speedOut'),
   loop:     document.getElementById('loop'),
   sound:    document.getElementById('sound'),
+  soundStyle: document.getElementById('soundStyle'),
   bg:       document.getElementById('bg'),
   font:     document.getElementById('font'),
   format:   document.getElementById('format'),
@@ -88,6 +89,7 @@ const state = {
   exporting: false,
   fontsReady: false,
   sound: false,
+  soundStyle: 'dry',
 };
 
 /* ------------------------------------------------------------------ *
@@ -104,13 +106,26 @@ function ensureAudio() {
   return audioCtx;
 }
 
+/* Voice presets: each (freq, Q, duration, peak gain, attack) shapes the
+ * filtered-noise burst into a distinct character. */
+const CLACK_VOICES = {
+  dry:   { freq: 1500, freqJitter: 400, q: 1.2, dur: 0.04, peak: 0.45, attack: 0.002 },
+  woody: { freq:  600, freqJitter: 120, q: 4.0, dur: 0.07, peak: 0.55, attack: 0.004 },
+  sharp: { freq: 3500, freqJitter: 600, q: 6.0, dur: 0.02, peak: 0.40, attack: 0.001 },
+};
+const VOICE_KEYS = ['dry', 'woody', 'sharp'];
+
 function clack() {
   if (!state.sound) return;
   const ac = ensureAudio();
   const t = ac.currentTime;
 
-  // short noise burst -> bandpass = a dry mechanical tick
-  const len = Math.floor(ac.sampleRate * 0.03);
+  const style = state.soundStyle === 'random'
+    ? VOICE_KEYS[Math.floor(Math.random() * VOICE_KEYS.length)]
+    : state.soundStyle;
+  const v = CLACK_VOICES[style] || CLACK_VOICES.dry;
+
+  const len = Math.max(1, Math.floor(ac.sampleRate * v.dur));
   const buf = ac.createBuffer(1, len, ac.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
@@ -119,19 +134,19 @@ function clack() {
 
   const bp = ac.createBiquadFilter();
   bp.type = 'bandpass';
-  bp.frequency.value = 1500 + Math.random() * 400;
-  bp.Q.value = 1.2;
+  bp.frequency.value = v.freq + (Math.random() - 0.5) * 2 * v.freqJitter;
+  bp.Q.value = v.q;
 
   const g = ac.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.45, t + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  g.gain.exponentialRampToValueAtTime(v.peak, t + v.attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + v.dur);
 
   src.connect(bp).connect(g);
   g.connect(ac.destination);
   if (recDest) g.connect(recDest);   // also feed the recording mix
   src.start(t);
-  src.stop(t + 0.05);
+  src.stop(t + v.dur + 0.01);
 }
 
 /* ------------------------------------------------------------------ *
@@ -519,6 +534,9 @@ els.sound.addEventListener('change', () => {
   state.sound = els.sound.checked;
   if (state.sound) ensureAudio();   // unlock AudioContext on user gesture
 });
+els.soundStyle.addEventListener('change', () => {
+  state.soundStyle = els.soundStyle.value;
+});
 els.bg.addEventListener('input', () => { state.bg = els.bg.value; render(); });
 els.font.addEventListener('change', async () => {
   state.font = els.font.value;
@@ -539,6 +557,7 @@ window.addEventListener('resize', fitCanvas);
   state.flipBase = +els.flips.value;
   state.speed = +els.speed.value;
   state.sound = els.sound.checked;
+  state.soundStyle = els.soundStyle.value;
   populateFormats();
   syncDefaultGrid();
   state.rows = +els.rows.value;
