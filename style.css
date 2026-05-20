@@ -198,13 +198,97 @@ button.ghost.danger:hover { border-color: #a55; color: #f99; }
 
 .field.disabled { opacity: .4; pointer-events: none; }
 
-.rename-row {
+/* ------------------ Theme editor (custom themes) ------------------ */
+.theme-editor {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px;
+  background: #181818;
+  border: 1px solid #2c2c2c;
+  border-radius: 6px;
 }
-.rename-row[hidden] { display: none; }
-.rename-row input { flex: 1; }
+.theme-editor[hidden] { display: none; }
+.theme-editor input[type="text"]#themeName { font-size: 13px; }
+
+.hex-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hex-row {
+  display: grid;
+  grid-template-columns: 78px 22px 1fr 22px;
+  align-items: center;
+  gap: 8px;
+  background: #111;
+  border: 1px solid #2c2c2c;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: text;          /* hex-text is the primary editable area */
+}
+.hex-row:focus-within { border-color: #6a6a6a; }
+.hex-label {
+  font-size: 11px;
+  color: #9a9a9a;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.hex-well {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #444;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.hex-text {
+  background: transparent;
+  border: none;
+  color: #e8e8e8;
+  padding: 4px 0;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.hex-text:focus { outline: none; }
+.hex-text.invalid { color: #f99; }
+.hex-pencil {
+  background: transparent;
+  border: 0;
+  color: #6a6a6a;
+  padding: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.hex-pencil:hover { color: #e8e8e8; }
+
+/* Native color picker is functionally present but visually hidden;
+   we trigger its picker programmatically and position it where it was
+   summoned from so the floating color UI appears in context. */
+#nativeColor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.editor-actions .primary.compact { flex: 0 0 auto; padding: 8px 16px; }
+.editor-actions .ghost.compact   { padding: 8px 12px; }
 
 .hint { font-size: 11px; color: #6f6f6f; line-height: 1.5; }
 .hint code {

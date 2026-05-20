@@ -181,10 +181,11 @@ const els = {
   soundStyle: document.getElementById('soundStyle'),
   theme:    document.getElementById('theme'),
   importTheme: document.getElementById('importTheme'),
-  themeRename: document.getElementById('themeRename'),
+  themeEditor: document.getElementById('themeEditor'),
   themeName: document.getElementById('themeName'),
-  themeNameSave: document.getElementById('themeNameSave'),
+  themeSave: document.getElementById('themeSave'),
   themeDelete: document.getElementById('themeDelete'),
+  nativeColor: document.getElementById('nativeColor'),
   bits:     document.getElementById('bits'),
   font:     document.getElementById('font'),
   format:   document.getElementById('format'),
@@ -241,6 +242,7 @@ const state = {
   cols: 5,
   themeId: 'black',         // key into themes() table
   customThemes: {},          // imported themes keyed by id
+  draftTheme: null,          // in-progress edits when editor is open
   showBits: false,
   font: els.font.value,
   flipBase: 12,            // retained even while greyed out by auto-loop
@@ -258,7 +260,17 @@ const state = {
 
 function themes() { return { ...BUILTIN_THEMES, ...state.customThemes }; }
 function currentTheme() {
+  // While the user has the editor open (state.themeId === '__custom__',
+  // or any saved custom is selected), state.draftTheme reflects the live
+  // edits. The render path always reads through currentTheme(), so any
+  // mutation to draftTheme + render() shows up instantly on the board.
+  if (state.draftTheme) return state.draftTheme;
   return themes()[state.themeId] || BUILTIN_THEMES.black;
+}
+
+/* Whether to show the editor for the current selection. */
+function isEditorTheme(id) {
+  return id === '__custom__' || !!state.customThemes[id];
 }
 
 function applyShowBits() {
@@ -791,29 +803,34 @@ els.record.addEventListener('click', exportVideo);
 window.addEventListener('resize', fitCanvas);
 
 /* ------------------------------------------------------------------ *
- * Themes — dropdown, import dialog, rename/delete.
+ * Themes — dropdown, editor, import, save/delete.
+ * Dropdown order:  Black, White, ...saved customs..., Custom (always last)
  * ------------------------------------------------------------------ */
 function populateThemeDropdown() {
   els.theme.innerHTML = '';
-  const all = themes();
-  for (const [id, t] of Object.entries(all)) {
+  // 1. Built-ins in their declared order
+  for (const [id, t] of Object.entries(BUILTIN_THEMES)) {
     const o = document.createElement('option');
     o.value = id; o.textContent = t.name;
     els.theme.appendChild(o);
   }
+  // 2. Saved custom themes (insertion order)
+  for (const [id, t] of Object.entries(state.customThemes)) {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = t.name;
+    els.theme.appendChild(o);
+  }
+  // 3. "Custom" is always the last item
+  const customOpt = document.createElement('option');
+  customOpt.value = '__custom__';
+  customOpt.textContent = 'Custom…';
+  els.theme.appendChild(customOpt);
+
+  // Restore selection (clamp to a valid option)
+  const all = { ...BUILTIN_THEMES, ...state.customThemes, __custom__: true };
   if (!all[state.themeId]) state.themeId = 'black';
   els.theme.value = state.themeId;
-  updateThemeRenameUI();
-}
-
-function updateThemeRenameUI() {
-  const t = currentTheme();
-  if (t.builtin) {
-    els.themeRename.hidden = true;
-  } else {
-    els.themeRename.hidden = false;
-    els.themeName.value = t.name;
-  }
+  applyEditorUI();
 }
 
 function makeThemeId(name) {
@@ -823,13 +840,173 @@ function makeThemeId(name) {
   return id;
 }
 
+/* Open/close the editor depending on selection. Seed draftTheme from
+ * either the saved custom theme or (for "Custom…") the currently-active
+ * theme so you can branch off whatever you have selected. */
+function applyEditorUI() {
+  const id = state.themeId;
+  if (id === '__custom__') {
+    // Seed from the previously rendered theme (or Black if none).
+    const seed = (state.draftTheme && state.draftTheme._seededForCustom)
+      ? state.draftTheme
+      : { ...currentTheme(), _seededForCustom: true, builtin: false };
+    state.draftTheme = {
+      name: '',
+      builtin: false,
+      isLight: seed.isLight,
+      bg: seed.bg, tile: seed.tile, text: seed.text, accent: seed.accent,
+      _seededForCustom: true,
+    };
+    syncEditorFromDraft();
+    els.themeEditor.hidden = false;
+    els.themeDelete.hidden = true;
+    els.themeName.value = '';
+    els.themeName.placeholder = 'Name (auto-generated on save)';
+    els.themeSave.textContent = 'Save as new';
+  } else if (state.customThemes[id]) {
+    // Editing an existing saved custom theme — Save updates in place.
+    state.draftTheme = { ...state.customThemes[id] };
+    syncEditorFromDraft();
+    els.themeEditor.hidden = false;
+    els.themeDelete.hidden = false;
+    els.themeName.value = state.draftTheme.name;
+    els.themeName.placeholder = 'Theme name';
+    els.themeSave.textContent = 'Save';
+  } else {
+    // Built-in (or unknown) — no editor.
+    state.draftTheme = null;
+    els.themeEditor.hidden = true;
+  }
+}
+
+/* Mirror draftTheme colors into the hex-row inputs and wells. */
+function syncEditorFromDraft() {
+  if (!state.draftTheme) return;
+  for (const field of ['bg', 'tile', 'text', 'accent']) {
+    const value = (state.draftTheme[field] || '#000000').toLowerCase();
+    const input = els.themeEditor.querySelector(`.hex-text[data-field="${field}"]`);
+    const well  = els.themeEditor.querySelector(`.hex-well[data-pickfor="${field}"]`);
+    if (input) { input.value = value.toUpperCase(); input.classList.remove('invalid'); }
+    if (well)  { well.style.background = value; }
+  }
+}
+
+/* Validate + apply a hex string to one field of the draft. Returns true
+ * if applied. Accepts 3/6 digit hex with or without leading '#'. */
+function applyHexEdit(field, raw) {
+  let v = (raw || '').trim().replace(/^#/, '');
+  if (v.length === 3) v = v.split('').map(c => c+c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return false;
+  const hex = '#' + v.toLowerCase();
+  state.draftTheme[field] = hex;
+  // Recompute isLight from bg so the white-bezel rendering toggles.
+  state.draftTheme.isLight = relativeLuminance(state.draftTheme.bg) > 0.55;
+  // Update the matching well immediately.
+  const well = els.themeEditor.querySelector(`.hex-well[data-pickfor="${field}"]`);
+  if (well) well.style.background = hex;
+  render();
+  return true;
+}
+
 els.theme.addEventListener('change', () => {
   state.themeId = els.theme.value;
-  updateThemeRenameUI();
+  applyEditorUI();
   render();
   saveSettings();
 });
 
+/* --- Hex-row interactions --- */
+// Native color picker: anchor it under the well/pencil that was clicked,
+// then click() it to open the system color picker in roughly the right spot.
+let pickerField = null;
+function openPickerFor(field, anchorEl) {
+  if (!state.draftTheme) return;
+  pickerField = field;
+  els.nativeColor.value = state.draftTheme[field] || '#000000';
+  // Anchor: position the (invisible) input under the anchor's bottom-left.
+  const r = anchorEl.getBoundingClientRect();
+  els.nativeColor.style.left = (r.left + window.scrollX) + 'px';
+  els.nativeColor.style.top  = (r.bottom + window.scrollY) + 'px';
+  els.nativeColor.click();
+}
+els.themeEditor.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-pickfor]');
+  if (!t) return;
+  openPickerFor(t.dataset.pickfor, t);
+});
+els.nativeColor.addEventListener('input', () => {
+  if (!pickerField || !state.draftTheme) return;
+  applyHexEdit(pickerField, els.nativeColor.value);
+  const input = els.themeEditor.querySelector(`.hex-text[data-field="${pickerField}"]`);
+  if (input) input.value = els.nativeColor.value.toUpperCase();
+});
+
+// Text-field editing: validate on input; revert on blur if invalid.
+els.themeEditor.addEventListener('input', (e) => {
+  const input = e.target.closest('.hex-text');
+  if (!input || !state.draftTheme) return;
+  const ok = applyHexEdit(input.dataset.field, input.value);
+  input.classList.toggle('invalid', !ok);
+});
+els.themeEditor.addEventListener('blur', (e) => {
+  const input = e.target.closest && e.target.closest('.hex-text');
+  if (!input || !state.draftTheme) return;
+  // If currently invalid, snap back to the last valid value from draft.
+  if (input.classList.contains('invalid')) {
+    input.value = (state.draftTheme[input.dataset.field] || '#000000').toUpperCase();
+    input.classList.remove('invalid');
+  } else {
+    // Normalize formatting (uppercase, leading #) on commit.
+    input.value = (state.draftTheme[input.dataset.field] || '#000000').toUpperCase();
+  }
+}, true);
+
+els.themeName.addEventListener('input', () => {
+  if (state.draftTheme) state.draftTheme.name = els.themeName.value;
+});
+
+/* --- Save: creates a new theme (when on "Custom") or updates the
+ * selected saved theme in place. --- */
+els.themeSave.addEventListener('click', () => {
+  if (!state.draftTheme) return;
+  const d = state.draftTheme;
+  if (state.themeId === '__custom__') {
+    // Auto-name if the user didn't provide one.
+    const name = (els.themeName.value || '').trim() || nearestNamedColor(d.bg);
+    const id = makeThemeId(name);
+    state.customThemes[id] = {
+      name, builtin: false, isLight: d.isLight,
+      bg: d.bg, tile: d.tile, text: d.text, accent: d.accent,
+    };
+    state.themeId = id;
+    state.draftTheme = null;       // exit edit mode for built-in-ish UX
+    populateThemeDropdown();
+    render();
+    saveSettings();
+  } else if (state.customThemes[state.themeId]) {
+    // Update in place.
+    const t = state.customThemes[state.themeId];
+    t.name = (els.themeName.value || '').trim() || t.name;
+    t.isLight = d.isLight;
+    t.bg = d.bg; t.tile = d.tile; t.text = d.text; t.accent = d.accent;
+    state.draftTheme = { ...t };
+    populateThemeDropdown();
+    render();
+    saveSettings();
+  }
+});
+
+els.themeDelete.addEventListener('click', () => {
+  if (!state.customThemes[state.themeId]) return;
+  delete state.customThemes[state.themeId];
+  state.themeId = 'black';
+  state.draftTheme = null;
+  populateThemeDropdown();
+  render();
+  saveSettings();
+});
+
+/* --- Import button + dialog (unchanged behavior; creates a saved custom) --- */
 els.importTheme.addEventListener('click', () => {
   els.importText.value = '';
   els.importError.textContent = '';
@@ -838,41 +1015,19 @@ els.importTheme.addEventListener('click', () => {
     setTimeout(() => els.importText.focus(), 50);
   }
 });
-
 els.importDialog.addEventListener('close', () => {
   if (els.importDialog.returnValue !== 'ok') return;
   const hexes = parseHexList(els.importText.value);
   if (hexes.length < 2) {
-    // Reopen with error message
     els.importError.textContent = 'Need at least 2 valid hex colors.';
     if (typeof els.importDialog.showModal === 'function') els.importDialog.showModal();
     return;
   }
   const theme = themeFromHexes(hexes);
-  let id = makeThemeId(theme.name);
-  // If the auto-name collided, try a numbered suffix.
+  const id = makeThemeId(theme.name);
   state.customThemes[id] = theme;
   state.themeId = id;
-  populateThemeDropdown();
-  render();
-  saveSettings();
-});
-
-els.themeNameSave.addEventListener('click', () => {
-  const t = state.customThemes[state.themeId];
-  if (!t) return;
-  const newName = els.themeName.value.trim();
-  if (!newName) return;
-  t.name = newName;
-  // Refresh dropdown label without changing id
-  populateThemeDropdown();
-  saveSettings();
-});
-
-els.themeDelete.addEventListener('click', () => {
-  if (!state.customThemes[state.themeId]) return;
-  delete state.customThemes[state.themeId];
-  state.themeId = 'black';
+  state.draftTheme = null;
   populateThemeDropdown();
   render();
   saveSettings();
