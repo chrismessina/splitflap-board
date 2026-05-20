@@ -485,10 +485,16 @@ function roundRect(x, y, w, h, r) {
 }
 
 function render() {
-  const W = els.canvas.width, H = els.canvas.height;
+  // Use CSS-pixel dimensions: during normal render the ctx is scaled by
+  // DPR so we draw in CSS pixels; during export the ctx scale is 1 and
+  // canvas.width/height are 1920x1080.
+  const W = state.exporting ? els.canvas.width : els.canvas.clientWidth;
+  const H = state.exporting ? els.canvas.height : els.canvas.clientHeight;
   const theme = currentTheme();
   ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, W, H);
+  // Crisper chip rectangles — bilinear smoothing only blurs solid fills.
+  ctx.imageSmoothingEnabled = false;
   const L = layout(W, H);
   let i = 0;
   for (let r = 0; r < state.rows; r++) {
@@ -510,8 +516,18 @@ function fitCanvas() {
                 (rows * ASPECT + (rows + 1) * GAP);
   let w = maxW, h = w / ratio;
   if (h > maxH) { h = maxH; w = h * ratio; }
-  els.canvas.width = Math.round(w);
-  els.canvas.height = Math.round(h);
+  // CSS pixels (what we draw in) vs. backing-store pixels (what the GPU
+  // actually paints). On a 2x display, scaling the backing store by DPR
+  // means text and chip rectangles render at native physical resolution
+  // instead of getting bilinearly upsampled.
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const cssW = Math.round(w);
+  const cssH = Math.round(h);
+  els.canvas.style.width  = cssW + 'px';
+  els.canvas.style.height = cssH + 'px';
+  els.canvas.width  = Math.round(cssW * dpr);
+  els.canvas.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // drawing remains in CSS pixels
   render();
 }
 
@@ -595,6 +611,7 @@ async function exportVideo() {
   const prevW = els.canvas.width, prevH = els.canvas.height;
   els.canvas.width = 1920;
   els.canvas.height = 1080;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);   // raw 1080p, no DPR upscale
 
   rebuildCells();
   for (const cell of state.cells) {
