@@ -27,34 +27,114 @@ body {
   border-radius: 8px;
 }
 
+/* ------------------ Sidebar panel ------------------ */
 #panel {
-  width: 320px;
+  width: 340px;
   flex-shrink: 0;
   background: #1c1c1c;
   border-left: 1px solid #2c2c2c;
-  padding: 24px;
+  padding: 20px 22px 24px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  transition: transform 280ms ease, width 280ms ease, padding 280ms ease,
+              border-color 280ms ease;
 }
 
-#panel h1 {
+/* Collapsed: slide out + reclaim width */
+body[data-sidebar="collapsed"] #panel {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-left-color: transparent;
+  transform: translateX(100%);
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.panel-header h1 {
   font-size: 16px;
   font-weight: 600;
   letter-spacing: .02em;
 }
 
+/* Icon-only button used in the panel header */
+.icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #9a9a9a;
+  padding: 4px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+.icon-btn:hover { color: #fff; border-color: #383838; background: #222; }
+
+/* Floating restore button (visible only while sidebar is collapsed) */
+#sidebarRestore {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  background: #1c1c1c;
+  border: 1px solid #2c2c2c;
+  color: #6a6a6a;          /* dimmed by default */
+  padding: 6px;
+  border-radius: 8px;
+  display: none;           /* shown via [data-sidebar="collapsed"] */
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 180ms ease, color 180ms ease;
+  z-index: 10;
+}
+body[data-sidebar="collapsed"] #sidebarRestore { display: inline-flex; }
+#sidebarRestore.is-near { opacity: 1; color: #f4f4f4; }
+#sidebarRestore:hover    { opacity: 1; color: #f4f4f4; }
+
+/* ------------------ Form groups (fieldsets) ------------------ */
+.group {
+  border: 1px solid #2c2c2c;
+  border-radius: 8px;
+  padding: 14px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #1f1f1f;
+}
+.group legend {
+  padding: 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #c0c0c0;
+  font-weight: 500;
+}
+
+/* ------------------ Fields ------------------ */
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field > span { font-size: 12px; color: #9a9a9a; text-transform: uppercase; letter-spacing: .05em; }
+.field > span,
+.field-label { font-size: 12px; color: #9a9a9a; text-transform: uppercase; letter-spacing: .05em; }
 .field > span small { text-transform: none; letter-spacing: 0; color: #6f6f6f; }
 
-.row { display: flex; gap: 12px; }
+.row { display: flex; gap: 10px; }
 .row .field { flex: 1; }
+.row .ghost.compact { align-self: stretch; }
 
 input[type="text"],
 input[type="number"],
-select {
+input[type="search"],
+select,
+textarea {
   background: #111;
   border: 1px solid #383838;
   color: #e8e8e8;
@@ -75,7 +155,7 @@ input[type="color"] {
 
 input[type="range"] { width: 100%; accent-color: #f4f4f4; }
 
-input:focus, select:focus { outline: none; border-color: #6a6a6a; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: #6a6a6a; }
 
 .toggle {
   display: flex;
@@ -113,8 +193,18 @@ button.ghost {
   padding: 7px 10px;
 }
 button.ghost:hover { border-color: #5a5a5a; color: #ccc; }
+button.ghost.compact { padding: 7px 12px; white-space: nowrap; }
+button.ghost.danger:hover { border-color: #a55; color: #f99; }
 
 .field.disabled { opacity: .4; pointer-events: none; }
+
+.rename-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.rename-row[hidden] { display: none; }
+.rename-row input { flex: 1; }
 
 .hint { font-size: 11px; color: #6f6f6f; line-height: 1.5; }
 .hint code {
@@ -130,3 +220,19 @@ button.ghost:hover { border-color: #5a5a5a; color: #ccc; }
 
 .status { font-size: 12px; color: #d0a; min-height: 16px; }
 .status.ok { color: #6c9; }
+
+/* ------------------ Import dialog ------------------ */
+dialog#importDialog {
+  background: #1c1c1c;
+  color: #e8e8e8;
+  border: 1px solid #2c2c2c;
+  border-radius: 10px;
+  padding: 20px;
+  width: min(440px, calc(100vw - 32px));
+}
+dialog#importDialog::backdrop { background: rgba(0,0,0,.5); }
+dialog#importDialog h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.dialog-hint { font-size: 12px; color: #9a9a9a; margin-bottom: 12px; line-height: 1.5; }
+dialog#importDialog textarea { font-family: "DM Mono", monospace; resize: vertical; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.dialog-actions button.primary { flex: 0; padding: 9px 16px; }

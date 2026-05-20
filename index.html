@@ -7,68 +7,60 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400&family=Inter:wght@400;500&family=DM+Mono:wght@300;400&family=Oswald:wght@300;400&family=Source+Sans+3:wght@300;400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <div id="stage">
   <canvas id="board"></canvas>
 </div>
 
+<!-- Floating restore-sidebar button: visible when panel is collapsed.
+     Dimmed until the cursor is within ~30px of the right edge. -->
+<button id="sidebarRestore" type="button" aria-label="Show settings">
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <line x1="15" y1="4" x2="15" y2="20" stroke="currentColor" stroke-width="1.6"/>
+  </svg>
+</button>
+
 <aside id="panel">
-  <h1>Split-Flap Board</h1>
+  <header class="panel-header">
+    <h1>Settings</h1>
+    <button id="sidebarToggle" type="button" class="icon-btn" aria-label="Hide settings">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <line x1="15" y1="4" x2="15" y2="20" stroke="currentColor" stroke-width="1.6"/>
+      </svg>
+    </button>
+  </header>
 
   <label class="field">
     <span>Text</span>
     <input id="message" type="text" value="HELLO" autocomplete="off">
   </label>
 
-  <div class="row">
-    <label class="field">
-      <span>Rows</span>
-      <input id="rows" type="number" min="1" max="12" value="1">
+  <!-- =================== Appearance =================== -->
+  <fieldset class="group">
+    <legend>Appearance</legend>
+
+    <div class="field">
+      <span class="field-label">Color theme</span>
+      <div class="row">
+        <select id="theme"></select>
+        <button id="importTheme" type="button" class="ghost compact">Import</button>
+      </div>
+      <div id="themeRename" class="rename-row" hidden>
+        <input id="themeName" type="text" placeholder="Theme name">
+        <button id="themeNameSave" type="button" class="ghost compact">Save</button>
+        <button id="themeDelete" type="button" class="ghost compact danger">Delete</button>
+      </div>
+    </div>
+
+    <label class="toggle">
+      <input id="bits" type="checkbox">
+      <span>Show colored bits</span>
     </label>
-    <label class="field">
-      <span>Columns</span>
-      <input id="cols" type="number" min="1" max="44" value="5">
-    </label>
-  </div>
-  <button id="resetGrid" class="ghost">Reset grid to text length</button>
 
-  <label class="field">
-    <span>Flips per cell <small>(base; jittered per cell)</small></span>
-    <input id="flips" type="number" min="1" max="60" value="12">
-  </label>
-
-  <label class="field">
-    <span>Speed <small>(<output id="speedOut">70</output> ms / flip)</small></span>
-    <input id="speed" type="range" min="20" max="180" value="70">
-  </label>
-
-  <label class="toggle">
-    <input id="loop" type="checkbox">
-    <span>Auto-loop</span>
-  </label>
-
-  <label class="toggle">
-    <input id="sound" type="checkbox">
-    <span>Enable sound</span>
-  </label>
-
-  <label class="field">
-    <span>Sound style</span>
-    <select id="soundStyle">
-      <option value="dry" selected>Dry tick</option>
-      <option value="woody">Woody</option>
-      <option value="sharp">Sharp</option>
-      <option value="random">Random</option>
-    </select>
-  </label>
-
-  <div class="row">
-    <label class="field">
-      <span>Background</span>
-      <input id="bg" type="color" value="#0a0a0a">
-    </label>
     <label class="field">
       <span>Typeface</span>
       <select id="font">
@@ -79,23 +71,94 @@
         <option value='400 1em "Source Sans 3", sans-serif'>Source Sans (humanist)</option>
       </select>
     </label>
-  </div>
 
-  <label class="field">
-    <span>Video format</span>
-    <select id="format"></select>
-  </label>
+    <div class="row">
+      <label class="field">
+        <span>Rows</span>
+        <input id="rows" type="number" min="1" max="12" value="1">
+      </label>
+      <label class="field">
+        <span>Columns</span>
+        <input id="cols" type="number" min="1" max="44" value="5">
+      </label>
+    </div>
+    <button id="resetGrid" class="ghost">Reset grid to text length</button>
+  </fieldset>
 
-  <div class="actions">
-    <button id="flip" class="primary">Flip</button>
-    <button id="record" class="primary" disabled>Record &amp; Download</button>
-  </div>
+  <!-- =================== Animation =================== -->
+  <fieldset class="group">
+    <legend>Animation</legend>
 
-  <p class="hint">Recording exports 1920×1080. Only formats your browser can
-    encode are listed (H.265 can't be produced in-browser).</p>
-  <p id="status" class="status"></p>
+    <label class="field">
+      <span>Flips per cell <small>(base; jittered per cell)</small></span>
+      <input id="flips" type="number" min="1" max="60" value="12">
+    </label>
+
+    <label class="field">
+      <span>Speed <small>(<output id="speedOut">70</output> ms / flip)</small></span>
+      <input id="speed" type="range" min="20" max="180" value="70">
+    </label>
+
+    <label class="toggle">
+      <input id="loop" type="checkbox">
+      <span>Auto-loop</span>
+    </label>
+  </fieldset>
+
+  <!-- =================== Sound =================== -->
+  <fieldset class="group">
+    <legend>Sound</legend>
+
+    <label class="toggle">
+      <input id="sound" type="checkbox">
+      <span>Enable sound</span>
+    </label>
+
+    <label class="field">
+      <span>Sound style</span>
+      <select id="soundStyle">
+        <option value="dry" selected>Dry tick</option>
+        <option value="woody">Woody</option>
+        <option value="sharp">Sharp</option>
+        <option value="random">Random</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <!-- =================== Export =================== -->
+  <fieldset class="group">
+    <legend>Export</legend>
+
+    <label class="field">
+      <span>Video format</span>
+      <select id="format"></select>
+    </label>
+
+    <div class="actions">
+      <button id="flip" class="primary">Flip</button>
+      <button id="record" class="primary" disabled>Record &amp; Download</button>
+    </div>
+
+    <p class="hint">Recording exports 1920×1080. Only formats your browser can encode are listed.</p>
+    <p id="status" class="status"></p>
+  </fieldset>
 </aside>
 
-<script src="app.js?v=3"></script>
+<!-- Hidden file input + dialog for theme import -->
+<dialog id="importDialog">
+  <form method="dialog">
+    <h2>Import color theme</h2>
+    <p class="dialog-hint">Paste a comma-separated list of hex colors —
+      ideally 4 (background, tile, text, accent). Slack's share format works.</p>
+    <textarea id="importText" rows="3" placeholder="#0a0a0a, #161616, #f4f4f4, #ff7a59"></textarea>
+    <p id="importError" class="status"></p>
+    <div class="dialog-actions">
+      <button value="cancel" class="ghost">Cancel</button>
+      <button id="importConfirm" value="ok" class="primary">Import</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js?v=5"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
  * Gap codes (43,45,51,57,58,61) are simply absent from the reel.
  * Index = reel position (NOT the Vestaboard numeric code).
  * ------------------------------------------------------------------ */
-const REEL = [
+const REEL_TEXT = [
   ' ',
   'A','B','C','D','E','F','G','H','I','J','K','L','M',
   'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
@@ -15,12 +15,125 @@ const REEL = [
   '!','@','#','$','(',')','-','+','&','=',';',':',
   "'",'"','%',',','.','/','?'
 ];
-const REEL_INDEX = (() => {
-  const m = new Map();
-  REEL.forEach((ch, i) => { if (!m.has(ch)) m.set(ch, i); });
-  return m;
-})();
+
+/* Color chip tiles — Vestaboard codes 63-68 (red, orange, yellow, green,
+ * blue, violet). Represented internally as Unicode Private Use Area
+ * sentinel chars (U+E001..U+E006) so they slot into REEL like any other
+ * glyph but never collide with real text. When 'Show colored bits' is on,
+ * these positions are part of the reel; when off, they're excluded.
+ */
+const CHIP_COLORS = ['#dc3545','#f08a24','#f2c618','#3aa55d','#3e7bd6','#8a4baf'];
+const CHIP_KEYS = CHIP_COLORS.map((_, i) => String.fromCharCode(0xE001 + i));
+const CHIP_CHARS = {};
+CHIP_KEYS.forEach((k, i) => { CHIP_CHARS[k] = CHIP_COLORS[i]; });
+const REEL_BITS = REEL_TEXT.concat(CHIP_KEYS);
+
+// Active reel depends on state.showBits; resolved lazily.
+let REEL = REEL_TEXT;
+let REEL_INDEX = new Map();
+function rebuildReelIndex() {
+  REEL_INDEX = new Map();
+  REEL.forEach((ch, i) => { if (!REEL_INDEX.has(ch)) REEL_INDEX.set(ch, i); });
+}
+rebuildReelIndex();
 const posOf = ch => REEL_INDEX.has(ch) ? REEL_INDEX.get(ch) : 0;
+const isChip = ch => Object.prototype.hasOwnProperty.call(CHIP_CHARS, ch);
+
+/* ------------------------------------------------------------------ *
+ * Color themes. Each theme defines four colors:
+ *   bg     — page/canvas background behind the board
+ *   tile   — base tile face color
+ *   text   — glyph color
+ *   accent — used for seam, shadow rim, and (on light themes) the
+ *            "empty slot" outline tint
+ * isLight switches the empty-cell rendering: deep recess vs. ghosted slot.
+ * ------------------------------------------------------------------ */
+const BUILTIN_THEMES = {
+  black: {
+    name: 'Black', builtin: true, isLight: false,
+    bg: '#0a0a0a', tile: '#161616', text: '#f4f4f4', accent: '#000000',
+  },
+  white: {
+    // Matches the off-white Vestaboard product photography.
+    name: 'White', builtin: true, isLight: true,
+    bg: '#eceaea', tile: '#f7f7f7', text: '#111111', accent: '#b6b6b6',
+  },
+};
+
+/* Tiny named-color palette used to auto-name imported themes. The importer
+ * picks the closest entry to the imported background color. */
+const NAMED_COLORS = [
+  ['Black',      0x111111], ['Charcoal',   0x2c2c2c], ['Slate',      0x546e7a],
+  ['Steel',      0x607d8b], ['Snow',       0xf7f7f7], ['Ivory',      0xf0e9d2],
+  ['Sand',       0xd6c79a], ['Stone',      0xa39e93], ['Plum',       0x611f69],
+  ['Aubergine',  0x39063a], ['Violet',     0x8a4baf], ['Lavender',   0xc7b8e6],
+  ['Magenta',    0xc474d3], ['Rose',       0xe4a0c2], ['Crimson',    0xa3193d],
+  ['Brick',      0xa3441f], ['Orange',     0xf08a24], ['Amber',      0xf2c618],
+  ['Lemon',      0xfde047], ['Olive',      0x6b7d2c], ['Forest',     0x1f5132],
+  ['Emerald',    0x20a271], ['Mint',       0x4cc894], ['Teal',       0x0e7c86],
+  ['Aqua',       0x4dd0e1], ['Sky',        0x4ea1d3], ['Cobalt',     0x1f4b99],
+  ['Navy',       0x0a1f4a], ['Royal',      0x3e7bd6], ['Indigo',     0x3d2b8f],
+];
+function hexToRgb(hex) {
+  const h = hex.replace('#','');
+  const n = parseInt(h.length === 3
+    ? h.split('').map(c => c+c).join('')
+    : h.slice(0,6), 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+function rgbDist2(a, b) {
+  const dr=a[0]-b[0], dg=a[1]-b[1], db=a[2]-b[2];
+  return dr*dr + dg*dg + db*db;
+}
+function nearestNamedColor(hex) {
+  const rgb = hexToRgb(hex);
+  let best = NAMED_COLORS[0], bestD = Infinity;
+  for (const [name, color] of NAMED_COLORS) {
+    const d = rgbDist2(rgb, [(color>>16)&255,(color>>8)&255,color&255]);
+    if (d < bestD) { best = [name,color]; bestD = d; }
+  }
+  return best[0];
+}
+
+/* Permissive hex extractor: pulls any #?RGB / #?RGBA / #?RRGGBB / #?RRGGBBAA
+ * tokens out of an arbitrary string and normalizes to #RRGGBB. */
+function parseHexList(input) {
+  const matches = (input || '').match(/#?[0-9a-fA-F]{3,8}/g) || [];
+  const out = [];
+  for (let m of matches) {
+    m = m.replace('#','');
+    if (m.length === 3) m = m.split('').map(c => c+c).join('');
+    else if (m.length === 4) m = m.slice(0,3).split('').map(c => c+c).join('');
+    else if (m.length === 6) { /* ok */ }
+    else if (m.length === 8) m = m.slice(0,6);
+    else continue;
+    if (!/^[0-9a-fA-F]{6}$/.test(m)) continue;
+    out.push('#' + m.toLowerCase());
+  }
+  return out;
+}
+
+/* Build a theme from a list of hex colors. Slack's share format gives 4;
+ * we tolerate 2-8 by filling missing slots with sensible derivations. */
+function themeFromHexes(hexes, fallbackName) {
+  if (hexes.length < 2) return null;
+  const bg     = hexes[0];
+  const tile   = hexes[1] || bg;
+  const text   = hexes[2] || (relativeLuminance(bg) > 0.5 ? '#111111' : '#f4f4f4');
+  const accent = hexes[3] || tile;
+  const isLight = relativeLuminance(bg) > 0.55;
+  return {
+    name: fallbackName || nearestNamedColor(bg),
+    builtin: false, isLight, bg, tile, text, accent,
+  };
+}
+function relativeLuminance(hex) {
+  const [r,g,b] = hexToRgb(hex).map(v => {
+    v /= 255;
+    return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+  });
+  return 0.2126*r + 0.7152*g + 0.0722*b;
+}
 
 /* ------------------------------------------------------------------ *
  * Video formats. MediaRecorder can only encode what the browser ships.
@@ -66,12 +179,25 @@ const els = {
   loop:     document.getElementById('loop'),
   sound:    document.getElementById('sound'),
   soundStyle: document.getElementById('soundStyle'),
-  bg:       document.getElementById('bg'),
+  theme:    document.getElementById('theme'),
+  importTheme: document.getElementById('importTheme'),
+  themeRename: document.getElementById('themeRename'),
+  themeName: document.getElementById('themeName'),
+  themeNameSave: document.getElementById('themeNameSave'),
+  themeDelete: document.getElementById('themeDelete'),
+  bits:     document.getElementById('bits'),
   font:     document.getElementById('font'),
   format:   document.getElementById('format'),
   flip:     document.getElementById('flip'),
   record:   document.getElementById('record'),
   status:   document.getElementById('status'),
+  panel:    document.getElementById('panel'),
+  sidebarToggle: document.getElementById('sidebarToggle'),
+  sidebarRestore: document.getElementById('sidebarRestore'),
+  importDialog: document.getElementById('importDialog'),
+  importText: document.getElementById('importText'),
+  importConfirm: document.getElementById('importConfirm'),
+  importError: document.getElementById('importError'),
 };
 const ctx = els.canvas.getContext('2d');
 
@@ -93,9 +219,12 @@ function saveSettings() {
       looping: els.loop.checked,
       sound: els.sound.checked,
       soundStyle: state.soundStyle,
-      bg: state.bg,
+      themeId: state.themeId,
+      customThemes: state.customThemes,
+      showBits: state.showBits,
       font: els.font.value,
       format: els.format.value,
+      sidebarCollapsed: state.sidebarCollapsed,
     }));
   } catch (_) { /* private mode / quota — silently ignore */ }
 }
@@ -110,19 +239,37 @@ function loadSettings() {
 const state = {
   rows: 1,
   cols: 5,
-  bg: '#0a0a0a',
+  themeId: 'black',         // key into themes() table
+  customThemes: {},          // imported themes keyed by id
+  showBits: false,
   font: els.font.value,
   flipBase: 12,            // retained even while greyed out by auto-loop
   speed: 70,               // ms per flip
   gridManual: false,       // user overrode rows/cols
-  cells: [],               // per-cell: {pos, target, remaining, delay, frameAcc}
+  cells: [],               // per-cell state
   running: false,
   looping: false,
   exporting: false,
   fontsReady: false,
   sound: false,
   soundStyle: 'dry',
+  sidebarCollapsed: false,
 };
+
+function themes() { return { ...BUILTIN_THEMES, ...state.customThemes }; }
+function currentTheme() {
+  return themes()[state.themeId] || BUILTIN_THEMES.black;
+}
+
+function applyShowBits() {
+  REEL = state.showBits ? REEL_BITS : REEL_TEXT;
+  rebuildReelIndex();
+  // Each existing cell's pos may point past the new reel length — clamp.
+  for (const c of state.cells) {
+    if (c.pos >= REEL.length) c.pos = 0;
+    if (c.prevPos >= REEL.length) c.prevPos = 0;
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * Audio — synthesized "clack" per flip.
@@ -234,29 +381,54 @@ function layout(canvasW, canvasH) {
   return { cw, ch, gx, offX, offY };
 }
 
-function drawCellGlyph(x, y, w, h, char) {
-  ctx.fillStyle = '#f4f4f4';
+/* Slightly perturb a hex color by `amt` (-1..+1 of channel space). Used to
+ * derive the tile's top/bottom gradient from the theme.tile color. */
+function shiftColor(hex, amt) {
+  const [r,g,b] = hexToRgb(hex);
+  const f = v => Math.max(0, Math.min(255, Math.round(v + amt * 255)));
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
+
+/* Draw a single glyph (or a chip solid). The char may be:
+ *   - a space        — nothing drawn (blank reel position)
+ *   - a CHIP sentinel — paints a solid colored rectangle (no text)
+ *   - any other char — drawn as text in theme.text color
+ */
+function drawCellGlyph(x, y, w, h, char, theme) {
+  if (char === ' ') return;
+  if (isChip(char)) {
+    ctx.fillStyle = CHIP_CHARS[char];
+    ctx.fillRect(x, y, w, h);
+    return;
+  }
+  ctx.fillStyle = theme.text;
   ctx.font = state.font.replace('1em', Math.round(h * 0.62) + 'px');
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(char === ' ' ? '' : char, x + w / 2, y + h / 2 + h * 0.02);
+  ctx.fillText(char, x + w / 2, y + h / 2 + h * 0.02);
 }
 
-function drawCell(x, y, w, h, cell) {
+function drawCell(x, y, w, h, cell, theme) {
   const r = Math.max(2, w * 0.05);
 
-  // body gradient (top lighter, bottom darker)
+  // Theme-derived tile gradient (top lighter, bottom darker)
+  const top1 = shiftColor(theme.tile, theme.isLight ? -0.02 : +0.04);
+  const top2 = shiftColor(theme.tile, theme.isLight ? -0.05 : -0.01);
+  const bot1 = shiftColor(theme.tile, theme.isLight ? -0.06 : -0.04);
+  const bot2 = shiftColor(theme.tile, theme.isLight ? -0.12 : -0.10);
   const g = ctx.createLinearGradient(0, y, 0, y + h);
-  g.addColorStop(0, '#222');
-  g.addColorStop(0.5, '#161616');
-  g.addColorStop(0.5, '#0d0d0d');
-  g.addColorStop(1, '#040404');
+  g.addColorStop(0, top1);
+  g.addColorStop(0.5, top2);
+  g.addColorStop(0.5, bot1);
+  g.addColorStop(1, bot2);
   roundRect(x, y, w, h, r);
   ctx.fillStyle = g;
   ctx.fill();
 
-  // drop shadow rim
-  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  // Rim — darker on light themes for the slot effect, near-black on dark.
+  ctx.strokeStyle = theme.isLight
+    ? 'rgba(0,0,0,0.18)'
+    : 'rgba(0,0,0,0.6)';
   ctx.lineWidth = 1;
   roundRect(x + 0.5, y + 0.5, w - 1, h - 1, r);
   ctx.stroke();
@@ -264,10 +436,9 @@ function drawCell(x, y, w, h, cell) {
   const midY = y + h / 2;
 
   if (cell.flipT >= 1) {
-    // settled (or between flips): show current glyph whole
     ctx.save();
     roundRect(x, y, w, h, r); ctx.clip();
-    drawCellGlyph(x, y, w, h, REEL[cell.pos]);
+    drawCellGlyph(x, y, w, h, REEL[cell.pos], theme);
     ctx.restore();
   } else {
     const nextChar = REEL[cell.pos];
@@ -277,7 +448,7 @@ function drawCell(x, y, w, h, cell) {
     ctx.beginPath();
     ctx.rect(x, midY, w, h / 2);
     roundRect(x, y, w, h, r); ctx.clip();
-    drawCellGlyph(x, y, w, h, nextChar);
+    drawCellGlyph(x, y, w, h, nextChar, theme);
     ctx.restore();
     // top half: the falling leaf of the OUTGOING glyph, foreshortened
     const scaleY = Math.max(0.0, 1 - cell.flipT);
@@ -288,15 +459,15 @@ function drawCell(x, y, w, h, cell) {
     ctx.translate(0, midY);
     ctx.scale(1, scaleY);
     ctx.translate(0, -midY);
-    drawCellGlyph(x, y, w, h, prevChar);
+    drawCellGlyph(x, y, w, h, prevChar, theme);
     ctx.fillStyle = `rgba(0,0,0,${0.35 * cell.flipT})`;
     ctx.fillRect(x, y, w, h / 2);
     ctx.restore();
   }
 
-  // seam
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = Math.max(1, h * 0.012);
+  // Seam — uses theme.accent so it blends into light themes properly.
+  ctx.strokeStyle = theme.accent;
+  ctx.lineWidth = Math.max(1, h * (theme.isLight ? 0.008 : 0.012));
   ctx.beginPath();
   ctx.moveTo(x, midY);
   ctx.lineTo(x + w, midY);
@@ -315,7 +486,8 @@ function roundRect(x, y, w, h, r) {
 
 function render() {
   const W = els.canvas.width, H = els.canvas.height;
-  ctx.fillStyle = state.bg;
+  const theme = currentTheme();
+  ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, W, H);
   const L = layout(W, H);
   let i = 0;
@@ -323,7 +495,7 @@ function render() {
     for (let c = 0; c < state.cols; c++) {
       const x = L.offX + c * (L.cw + L.gx);
       const y = L.offY + L.gx + r * (L.ch + L.gx);
-      drawCell(x, y, L.cw, L.ch, state.cells[i++]);
+      drawCell(x, y, L.cw, L.ch, state.cells[i++], theme);
     }
   }
 }
@@ -590,7 +762,6 @@ els.soundStyle.addEventListener('change', () => {
   state.soundStyle = els.soundStyle.value;
   saveSettings();
 });
-els.bg.addEventListener('input', () => { state.bg = els.bg.value; render(); saveSettings(); });
 els.font.addEventListener('change', async () => {
   state.font = els.font.value;
   await document.fonts.ready;
@@ -601,6 +772,130 @@ els.format.addEventListener('change', saveSettings);
 els.flip.addEventListener('click', () => { if (!state.looping) startFlip(); });
 els.record.addEventListener('click', exportVideo);
 window.addEventListener('resize', fitCanvas);
+
+/* ------------------------------------------------------------------ *
+ * Themes — dropdown, import dialog, rename/delete.
+ * ------------------------------------------------------------------ */
+function populateThemeDropdown() {
+  els.theme.innerHTML = '';
+  const all = themes();
+  for (const [id, t] of Object.entries(all)) {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = t.name;
+    els.theme.appendChild(o);
+  }
+  if (!all[state.themeId]) state.themeId = 'black';
+  els.theme.value = state.themeId;
+  updateThemeRenameUI();
+}
+
+function updateThemeRenameUI() {
+  const t = currentTheme();
+  if (t.builtin) {
+    els.themeRename.hidden = true;
+  } else {
+    els.themeRename.hidden = false;
+    els.themeName.value = t.name;
+  }
+}
+
+function makeThemeId(name) {
+  const base = (name || 'custom').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g,'') || 'custom';
+  let id = base, n = 2;
+  while (BUILTIN_THEMES[id] || state.customThemes[id]) { id = base + '-' + n++; }
+  return id;
+}
+
+els.theme.addEventListener('change', () => {
+  state.themeId = els.theme.value;
+  updateThemeRenameUI();
+  render();
+  saveSettings();
+});
+
+els.importTheme.addEventListener('click', () => {
+  els.importText.value = '';
+  els.importError.textContent = '';
+  if (typeof els.importDialog.showModal === 'function') {
+    els.importDialog.showModal();
+    setTimeout(() => els.importText.focus(), 50);
+  }
+});
+
+els.importDialog.addEventListener('close', () => {
+  if (els.importDialog.returnValue !== 'ok') return;
+  const hexes = parseHexList(els.importText.value);
+  if (hexes.length < 2) {
+    // Reopen with error message
+    els.importError.textContent = 'Need at least 2 valid hex colors.';
+    if (typeof els.importDialog.showModal === 'function') els.importDialog.showModal();
+    return;
+  }
+  const theme = themeFromHexes(hexes);
+  let id = makeThemeId(theme.name);
+  // If the auto-name collided, try a numbered suffix.
+  state.customThemes[id] = theme;
+  state.themeId = id;
+  populateThemeDropdown();
+  render();
+  saveSettings();
+});
+
+els.themeNameSave.addEventListener('click', () => {
+  const t = state.customThemes[state.themeId];
+  if (!t) return;
+  const newName = els.themeName.value.trim();
+  if (!newName) return;
+  t.name = newName;
+  // Refresh dropdown label without changing id
+  populateThemeDropdown();
+  saveSettings();
+});
+
+els.themeDelete.addEventListener('click', () => {
+  if (!state.customThemes[state.themeId]) return;
+  delete state.customThemes[state.themeId];
+  state.themeId = 'black';
+  populateThemeDropdown();
+  render();
+  saveSettings();
+});
+
+/* ------------------------------------------------------------------ *
+ * Colored bits toggle
+ * ------------------------------------------------------------------ */
+els.bits.addEventListener('change', () => {
+  state.showBits = els.bits.checked;
+  applyShowBits();
+  render();
+  saveSettings();
+});
+
+/* ------------------------------------------------------------------ *
+ * Sidebar collapse / restore (with cursor-proximity dimming)
+ * ------------------------------------------------------------------ */
+function applySidebarState() {
+  document.body.dataset.sidebar = state.sidebarCollapsed ? 'collapsed' : 'open';
+  // Re-fit canvas after the transition so the board uses reclaimed width.
+  setTimeout(fitCanvas, 300);
+}
+els.sidebarToggle.addEventListener('click', () => {
+  state.sidebarCollapsed = true;
+  applySidebarState();
+  saveSettings();
+});
+els.sidebarRestore.addEventListener('click', () => {
+  state.sidebarCollapsed = false;
+  applySidebarState();
+  saveSettings();
+});
+// Cursor proximity: brighten the floating button when cursor is near the
+// right edge (~30px). Only matters when collapsed.
+window.addEventListener('mousemove', (e) => {
+  if (!state.sidebarCollapsed) return;
+  const distFromRight = window.innerWidth - e.clientX;
+  els.sidebarRestore.classList.toggle('is-near', distFromRight <= 60);
+});
 
 /* ------------------------------------------------------------------ *
  * Boot
@@ -617,36 +912,44 @@ window.addEventListener('resize', fitCanvas);
     if (typeof saved.looping === 'boolean') els.loop.checked = saved.looping;
     if (typeof saved.sound   === 'boolean') els.sound.checked = saved.sound;
     if (saved.soundStyle)                 els.soundStyle.value = saved.soundStyle;
-    if (saved.bg)                         els.bg.value      = saved.bg;
+    if (typeof saved.showBits === 'boolean') els.bits.checked = saved.showBits;
+    if (saved.customThemes && typeof saved.customThemes === 'object')
+      state.customThemes = saved.customThemes;
+    if (saved.themeId)                    state.themeId = saved.themeId;
     if (saved.font) {
       const opt = [...els.font.options].find(o => o.value === saved.font);
       if (opt) els.font.value = saved.font;
     }
     els.speedOut.textContent = els.speed.value;
     state.gridManual = !!saved.gridManual;
+    state.sidebarCollapsed = !!saved.sidebarCollapsed;
   }
 
   // 2. Mirror DOM values into state.
   state.rows = +els.rows.value;
   state.cols = +els.cols.value;
-  state.bg = els.bg.value;
   state.font = els.font.value;
   state.flipBase = +els.flips.value;
   state.speed = +els.speed.value;
   state.sound = els.sound.checked;
   state.soundStyle = els.soundStyle.value;
   state.looping = els.loop.checked;
+  state.showBits = els.bits.checked;
+  applyShowBits();
   applySoundUI();
+  applySidebarState();
 
-  // 3. Populate the format dropdown (browser-dependent), then restore the
-  // saved selection if it is still available.
+  // 3. Themes: build dropdown (built-ins + restored custom), restore selection.
+  populateThemeDropdown();
+
+  // 4. Populate the format dropdown (browser-dependent), then restore.
   populateFormats();
   if (saved && saved.format) {
     const opt = [...els.format.options].find(o => o.value === saved.format);
     if (opt) els.format.value = saved.format;
   }
 
-  // 4. Grid sizing: respect manual override; otherwise derive from text.
+  // 5. Grid sizing: respect manual override; otherwise derive from text.
   if (!state.gridManual) {
     syncDefaultGrid();
     state.rows = +els.rows.value;
@@ -662,7 +965,7 @@ window.addEventListener('resize', fitCanvas);
   setStatus('');
   render();
 
-  // If auto-loop was on when we last saved, resume it.
+  // Auto-loop resume.
   if (state.looping) {
     els.flips.parentElement.classList.add('disabled');
     els.flips.disabled = true;
