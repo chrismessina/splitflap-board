@@ -4,7 +4,7 @@ A browser-based split-flap ("clicky-clacky") display generator, inspired by
 the Vestaboard. Type a message and watch each cell flip through the character
 reel into place — then record the animation as a video for slides or social.
 
-**Live:** https://chrismessina.github.io/splitflap-board/
+**Live:** https://chrismessina.github.io/flapper/
 
 ## Features
 
@@ -23,7 +23,7 @@ reel into place — then record the animation as a video for slides or social.
 Pass an initial message via the `text` query parameter:
 
 ```
-https://chrismessina.github.io/splitflap-board/?text=HELLO%20WORLD
+https://chrismessina.github.io/flapper/?text=HELLO%20WORLD
 ```
 
 The board opens with that text already set (URL-encoded, so spaces and
