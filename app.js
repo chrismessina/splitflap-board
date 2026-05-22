@@ -1097,6 +1097,21 @@ window.addEventListener('mousemove', (e) => {
     state.sidebarCollapsed = !!saved.sidebarCollapsed;
   }
 
+  // 1b. A ?text= query param overrides the restored/default text so the
+  // app is shareable via URL (e.g. ?text=HELLO%20WORLD). Per product
+  // decision, this is treated as the user's new text: it clears any
+  // manual grid override (so the grid fits the new text, like a paste)
+  // and is persisted via saveSettings() below.
+  let textFromUrl = null;
+  try {
+    const p = new URLSearchParams(window.location.search).get('text');
+    if (p !== null) textFromUrl = p;   // decodeURIComponent handled by URLSearchParams
+  } catch (_) { /* malformed URL — ignore */ }
+  if (textFromUrl !== null) {
+    els.message.value = textFromUrl;
+    state.gridManual = false;          // fit grid to the shared text
+  }
+
   // 2. Mirror DOM values into state.
   state.rows = +els.rows.value;
   state.cols = +els.cols.value;
@@ -1129,6 +1144,10 @@ window.addEventListener('mousemove', (e) => {
   }
   rebuildCells();
   fitCanvas();
+
+  // If a ?text= param seeded the text, persist it as the user's new
+  // saved text (and the now-fitted grid) so it survives the next reload.
+  if (textFromUrl !== null) saveSettings();
 
   setStatus('Loading fonts…');
   try { await document.fonts.ready; } catch (_) {}

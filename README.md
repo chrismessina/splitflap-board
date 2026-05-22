@@ -18,6 +18,17 @@ reel into place — then record the animation as a video for slides or social.
 - Video export at 1920×1080 (WebM, plus MP4/H.264 where the browser supports it)
 - Settings persist across reloads
 
+## Shareable links
+
+Pass an initial message via the `text` query parameter:
+
+```
+https://chrismessina.github.io/splitflap-board/?text=HELLO%20WORLD
+```
+
+The board opens with that text already set (URL-encoded, so spaces and
+punctuation work). It's treated as your saved text and persists on reload.
+
 ## Running locally
 
 No build step. Serve the folder with any static server:
